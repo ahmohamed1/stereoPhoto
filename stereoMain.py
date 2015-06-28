@@ -341,6 +341,8 @@ def undistortMap(H1, H2, img1, img2):
     rH = la.inv(K).dot(H1).dot(K)
     lH = la.inv(K).dot(H2).dot(K)
 
+    
+
     # TODO: lRect or rRect for img1/img2 ??
     map1x, map1y = cv2.initUndistortRectifyMap(K, d, rH, K, imgsize,
                                                cv2.CV_16SC2)
@@ -348,27 +350,8 @@ def undistortMap(H1, H2, img1, img2):
                                                cv2.CV_16SC2)
 
     # Convert the images to RGBA (add an axis with 4 values)
-    if len(img1.shape) == 2: # grayscale
-        # print "Grayscale for undistortMap"        
-        img1 = np.tile(img1[:,:,np.newaxis], [1,1,4])
-        img1[:,:,3] = 255
-        img2 = np.tile(img2[:,:,np.newaxis], [1,1,4])
-        img2[:,:,3] = 255
-    elif len(img1.shape) == 3: # RGB                
-        # double brackets (( ))
-        # http://stackoverflow.com/questions/5446522/data-type-not-understood
-        imgTmp1 = np.zeros((img1.shape[0], img1.shape[1], img1.shape[2]+1)) # add 4th channel        
-        imgTmp1[:,:,0:3] = img1
-        img1 = imgTmp1
-        img1[:,:,3] = 255
-        
-        imgTmp2 = np.zeros((img2.shape[0], img2.shape[1], img2.shape[2]+1)) # add 4th channel
-        imgTmp2[:,:,0:3] = img2
-        img2 = imgTmp2
-        img2[:,:,3] = 255
-    else:
-        print len(img1.shape) + " image size / type?"
-        
+    img1 = cv2.cvtColor(img1, cv2.COLOR_RGB2RGBA)
+    img2 = cv2.cvtColor(img2, cv2.COLOR_RGB2RGBA)
     
     return img1, map1x, map1y, img2, map2x, map2y
 
@@ -429,16 +412,7 @@ def rectifyWrapper(imgL, imgR, lines1, lines2, pts1, pts2, F):
     
     # We need to apply the perspective transformation
     # e.g. http://www.pyimagesearch.com/2014/05/05/building-pokedex-python-opencv-perspective-warping-step-5-6/
-    
-    # Convert the grayscale to RGB
-    if len(imgL.shape) == 2: # grayscale
-        # print "Grayscale Input (rectifyWrapper)"
-        imgL = cv2.cvtColor(imgL,cv2.COLOR_GRAY2BGR)
-        imgR = cv2.cvtColor(imgR,cv2.COLOR_GRAY2BGR)
-    else:
-        print "rectifyWrapper (inputSize?)"
         
-    
     # Transform the images so the matching horizontal lines will be horizontal 
     # with each other between images, http://scientiatertiidimension.blogspot.ca/2013/11/playing-with-disparity.html
     # (hint: cv2.stereoRectifyUncalibrated, cv2.warpPerspective).
@@ -447,8 +421,6 @@ def rectifyWrapper(imgL, imgR, lines1, lines2, pts1, pts2, F):
     # transpose
     pts1 = pts1.T
     pts2 = pts2.T
-    
-    # 
     
     try:
         H1, H2 = cv2.stereoRectifyUncalibrated(pts1, pts2, F, imgsize)
@@ -464,6 +436,7 @@ def rectifyWrapper(imgL, imgR, lines1, lines2, pts1, pts2, F):
     # http://scicomp.stackexchange.com/questions/2844/shearing-and-hartleys-rectification
     S = rectify_shearing(H1, H2, imgsize)
     H1 = S.dot(H1)
+
     
     # Init Undistort, Map (mapx / mapy)
     img1, map1x, map1y, img2, map2x, map2y = undistortMap(H1, H2, imgL, imgR)
@@ -552,19 +525,26 @@ if __name__ == "__main__":
     imgL = cv2.imread('testImages/pt_20150621_stereoTest_001left.jpg',1)
     imgR = cv2.imread('testImages/pt_20150621_stereoTest_002right.jpg',1)
     
+    imgL = cv2.imread('testImages/pt_20150628_stereo3_001left.jpg',1)
+    imgR = cv2.imread('testImages/pt_20150628_stereo3_002rightOut.jpg',1)
+    
     # From "Middlebury Stereo Dataset" | Tsukuba:
     # http://vision.middlebury.edu/stereo/data/scenes2001/data/tsukuba/
-    imgL = cv2.imread('testImages/scene1.row3.col2.ppm')
-    imgR = cv2.imread('testImages/scene1.row3.col4.ppm')      
+    # imgL = cv2.imread('testImages/scene1.row3.col2.ppm')
+    # imgR = cv2.imread('testImages/scene1.row3.col4.ppm')      
     
     # Easier to work with RGB order rather than with the BGR of openCV
     # http://www.bogotobogo.com/python/OpenCV_Python/python_opencv3_matplotlib_rgb_brg_image_load_display_save.php
+    if len(imgL.shape) == 2: # Greyscale
+        imgL = cv2.cvtColor(imgL,cv2.COLOR_GRAY2RGB)
+        imgR = cv2.cvtColor(imgR,cv2.COLOR_GRAY2RGB)
     if len(imgL.shape) == 3: # RGB
         imgL = cv2.cvtColor(imgL,cv2.COLOR_BGR2RGB)
         imgR = cv2.cvtColor(imgR,cv2.COLOR_BGR2RGB)
 
     # Initiate SURF detector
-    surf = cv2.xfeatures2d.SURF_create(4000)
+    surf_threshold = 6000
+    surf = cv2.xfeatures2d.SURF_create(surf_threshold)
     
     # Find KEYPOINTS and DESCRIPTORS
     
@@ -596,7 +576,8 @@ if __name__ == "__main__":
     rimg1, rimg2 = rectifyWrapper(imgL, imgR, lines1, lines2, pts1, pts2, F)
     
     # Overlay (align, register) the images
-    overlay = cv2.addWeighted(rimg1, 0.5, rimg2, 0.5, 0)
+    overlayIN = cv2.addWeighted(imgL, 0.5, imgR, 0.5, 0)
+    overlayRect = cv2.addWeighted(rimg1, 0.5, rimg2, 0.5, 0)
     
     # Register & Warp
     # tr_img2 = registerImages(pts1, pts2, rimg1[:,:,0:3], rimg2[:,:,0:3])        
@@ -609,8 +590,6 @@ if __name__ == "__main__":
     foreground, background = segmentImages(rimg1, rimg2)
     
     # Create the anaglyph
-    print rimg1.shape
-    print rimg2.shape
     anaglyph = anaglyph(rimg1[:,:,0:3], rimg2[:,:,0:3], optimized_anaglyph)
     # anaglyph = anaglyph(rimg1[:,:,0:3], tr_img2[:,:,0:3], optimized_anaglyph)
     # anaglyph = anaglyphWithForeground(rimg1[:,:,0:3], rimg2[:,:,0:3], optimized_anaglyph, foreground, background)
@@ -626,6 +605,11 @@ if __name__ == "__main__":
     print "Fix the Camera matrix K"
     print ".. no distortion at the moment" # not needed really for 50mm/f1.8, but still
     
+    # cv2.drawMatchesKnn expects list of lists as matches.
+    # http://opencv-python-tutroals.readthedocs.org/en/latest/py_tutorials/py_feature2d/py_matcher/py_matcher.html
+    imgDummy = np.zeros((1,1))
+    img5 = cv2.drawMatches(imgL,kp1,imgR,kp2,good[:10],imgDummy)
+    
     # Draw the points for display 
     img2_L = cv2.drawKeypoints(imgL,kp1,None,(255,0,0),4)
     img2_R = cv2.drawKeypoints(imgR,kp2,None,(255,0,0),4)
@@ -633,40 +617,30 @@ if __name__ == "__main__":
     # PLOT 1
     # subplot customization: subplot2grid
     # http://matplotlib.org/users/gridspec.html
-  
-    fig = plt.figure()
-    ax1 = plt.subplot2grid((1,1), (0,0))
-    plt.imshow(anaglyph), plt.title('Remap (only)')
+    plt.close('all') # will close all figures
+
+
+    fig = plt.figure(facecolor='white')
+    #fig.set_figheight(11)
+    #fig.set_figwidth(8.5)
+    
+    # subplot layout
+    rows = 3
+    cols = 3
+    
+    ax1 = plt.subplot2grid((rows,cols), (0,0)), plt.axis('off')
+    plt.imshow(overlayIN), plt.title('Input Overlay')
+    
+    ax4 = plt.subplot2grid((rows,cols), (1,1), colspan=2, rowspan=2)
+    plt.imshow(anaglyph), plt.title('Anaglyph'), plt.axis('off')
+    
+    ax5 = plt.subplot2grid((rows,cols), (1,0))
+    plt.imshow(rimg1), plt.title('Rectified Left'), plt.axis('off')
+    ax6 = plt.subplot2grid((rows,cols), (2,0))
+    plt.imshow(rimg2), plt.title('Rectified Right'), plt.axis('off')
+    
+        
+    ax2 = plt.subplot2grid((rows,cols), (0,1), colspan=2)
+    plt.imshow(img5), plt.title('Matching Features'), plt.axis('off')
+        
     plt.show()
-    
-    
-    '''
-    fig = plt.figure()
-    plt.subplot(241)
-    plt.imshow(img2_L), plt.title('SURF, key points LEFT')
-    plt.subplot(242)
-    plt.imshow(img2_R), plt.title('SURF, key points RIGHT')
-    plt.subplot(243)
-    plt.imshow(img5), plt.title('findFundamentalMat()')
-    plt.subplot(245)
-    plt.imshow(rimg1), plt.title('Rect. LEFT')
-    plt.subplot(246)
-    plt.imshow(rimg2), plt.title('Rect. RIGHT')
-    show_rectified_images(rimg1, rimg2)
-    plt.show()
-    '''
-    
-    '''
-    fig = plt.figure()
-    ax1 = plt.subplot2grid((1,4), (0,0))
-    plt.imshow(rimg1), plt.title('Rect. LEFT')
-    ax2 = plt.subplot2grid((1,4), (0,1))
-    plt.imshow(rimg2), plt.title('Rect. RIGHT')
-    ax3 = plt.subplot2grid((1,4), (0,2))
-    plt.imshow(overlay), plt.title('Overlay')
-    ax3 = plt.subplot2grid((1,4), (0,3))
-    plt.imshow(disparityBM), plt.title('Disparity BM')
-    plt.show()
-    
-    '''
-   
